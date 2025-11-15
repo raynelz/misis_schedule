@@ -66,13 +66,13 @@ def upload_schedules():
                 log.debug(f"File: {link}, Sheet: {sheet_name}")
                 log.debug(f"Original columns ({len(df.columns)}): {list(df.columns)}")
                 log.debug(f"DataFrame shape: {df.shape}")
+                log.debug(f"First few rows:\n{df.head()}")
 
-                weekdays = df.iloc[:, 0].ffill()
-                df["Дата"] = weekdays
-                lesson_orders = df.iloc[:, 1].ffill()
-                df["Номер"] = lesson_orders
-                df["Номер"] = df["Номер"].astype(int, errors="ignore")
+                # Заполняем пропуски в первых колонках
+                for i in range(min(3, len(df.columns))):
+                    df.iloc[:, i] = df.iloc[:, i].ffill()
 
+                # Обрабатываем названия колонок
                 columns = list(
                     pd.DataFrame(df.columns)
                     .replace(r"^Unnamed.*", np.nan, regex=True)
@@ -81,6 +81,71 @@ def upload_schedules():
                 df.columns = columns
                 log.debug(f"After ffill columns: {list(df.columns)}")
 
+                # Умное определение колонок по содержимому
+                weekday_col_idx = None
+                order_col_idx = None
+                time_col_idx = None
+                
+                weekdays_list = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+                
+                # Ищем колонку с днями недели
+                for idx, col in enumerate(df.columns[:5]):  # Проверяем первые 5 колонок
+                    if pd.isna(col):
+                        continue
+                    sample_values = df[col].dropna().head(10).astype(str).tolist()
+                    if any(day in ' '.join(sample_values) for day in weekdays_list):
+                        weekday_col_idx = idx
+                        log.debug(f"Found weekday column at index {idx}: {col}")
+                        break
+                
+                # Ищем колонку с номерами пар (должна содержать числа 1-5)
+                for idx, col in enumerate(df.columns[:5]):
+                    if pd.isna(col) or idx == weekday_col_idx:
+                        continue
+                    try:
+                        # Пробуем преобразовать в числа
+                        numeric_values = pd.to_numeric(df[col].dropna().head(20), errors='coerce')
+                        valid_numbers = numeric_values.dropna()
+                        if len(valid_numbers) > 0:
+                            # Проверяем, что числа в диапазоне 1-10 (номера пар)
+                            if valid_numbers.between(1, 10).sum() > len(valid_numbers) * 0.5:
+                                order_col_idx = idx
+                                log.debug(f"Found order column at index {idx}: {col}")
+                                break
+                    except:
+                        pass
+                
+                # Ищем колонку со временем (формат "09:00:00 - 10:35:00" или подобный)
+                for idx, col in enumerate(df.columns[:5]):
+                    if pd.isna(col) or idx in [weekday_col_idx, order_col_idx]:
+                        continue
+                    sample_values = df[col].dropna().head(10).astype(str).tolist()
+                    if any(':' in str(val) and '-' in str(val) for val in sample_values):
+                        time_col_idx = idx
+                        log.debug(f"Found time column at index {idx}: {col}")
+                        break
+
+                # Если не нашли автоматически, используем старую логику (первые две колонки)
+                if weekday_col_idx is None:
+                    weekday_col_idx = 0
+                    log.debug("Using default weekday column (index 0)")
+                if order_col_idx is None:
+                    order_col_idx = 1 if weekday_col_idx != 1 else 2
+                    log.debug(f"Using default order column (index {order_col_idx})")
+
+                # Создаем колонки Дата и Номер из найденных
+                df["Дата"] = df.iloc[:, weekday_col_idx].ffill()
+                df["Номер"] = df.iloc[:, order_col_idx].ffill()
+                
+                # Преобразуем номер в int, если возможно
+                df["Номер"] = pd.to_numeric(df["Номер"], errors='coerce').astype('Int64')
+                
+                log.debug(f"Weekday column index: {weekday_col_idx}, Order column index: {order_col_idx}")
+
+                # Сохраняем исходные названия колонок до обработки дубликатов
+                original_col_names = list(df.columns)
+                
+                # Обрабатываем дубликаты в названиях колонок
                 groups = set(columns)
                 try:
                     groups.remove("Номер")
@@ -99,7 +164,6 @@ def upload_schedules():
                 log.debug(f"After duplicate handling columns: {list(df.columns)}")
 
                 # Улучшенная фильтрация nan колонок
-                # Фильтруем колонки, которые являются nan или начинаются с "nan"
                 valid_columns = []
                 for col in df.columns:
                     if pd.isna(col) or (isinstance(col, str) and col.lower().startswith("nan")):
@@ -109,8 +173,23 @@ def upload_schedules():
                 df = df.loc[:, valid_columns]
                 log.debug(f"After nan filtering columns ({len(df.columns)}): {list(df.columns)}")
 
-                # Удаляем служебные колонки
+                # Удаляем служебные колонки (время и исходные колонки, которые мы уже скопировали)
                 columns_to_drop = ["Время"]
+                
+                # Удаляем исходные колонки, если они еще есть (но не "Дата" и "Номер", которые мы создали)
+                if weekday_col_idx < len(original_col_names):
+                    orig_weekday_col = original_col_names[weekday_col_idx]
+                    if orig_weekday_col not in ["Дата", "Номер"] and orig_weekday_col in df.columns:
+                        columns_to_drop.append(orig_weekday_col)
+                if order_col_idx < len(original_col_names):
+                    orig_order_col = original_col_names[order_col_idx]
+                    if orig_order_col not in ["Дата", "Номер"] and orig_order_col in df.columns:
+                        columns_to_drop.append(orig_order_col)
+                if time_col_idx is not None and time_col_idx < len(original_col_names):
+                    orig_time_col = original_col_names[time_col_idx]
+                    if orig_time_col not in ["Дата", "Номер"] and orig_time_col in df.columns:
+                        columns_to_drop.append(orig_time_col)
+                
                 for col in columns_to_drop:
                     if col in df.columns:
                         df.drop(columns=[col], inplace=True, errors="ignore")
@@ -134,7 +213,8 @@ def upload_schedules():
                 log.debug(f"Groups to process: {list(groups)}")
                 log.debug(f"Final DataFrame columns: {list(df.columns)}")
 
-                df["weekday"] = df["weekday"].map(
+                # Преобразуем weekday в числа
+                df["weekday"] = df["weekday"].astype(str).map(
                     {
                         "Понедельник": 0,
                         "Вторник": 1,
