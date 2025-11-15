@@ -59,10 +59,11 @@ async def get_schedule(
         )
 
     filters.weekday = None
-    filters.week_type = datetime.date.today().isocalendar()[1] % 2
+    filters.week_type = None  # По умолчанию не фильтруем по типу недели
     if filters.date:
         filters.weekday = filters.date.weekday()
         filters.week_type = filters.date.isocalendar()[1] % 2
+    # Если дата не указана, не фильтруем по типу недели - вернем данные для обеих недель
 
     log.debug(f"weekday={filters.weekday} week_type={filters.week_type}")
     db_lessons = crud.get_lessons(db, filters, offset, limit)
