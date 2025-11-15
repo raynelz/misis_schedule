@@ -58,8 +58,8 @@ async def get_schedule(
             detail="You must specify at least one filter",
         )
 
-    filters.weekday: int | None = None
-    filters.week_type: int = datetime.date.today().isocalendar()[1] % 2
+    filters.weekday = None
+    filters.week_type = datetime.date.today().isocalendar()[1] % 2
     if filters.date:
         filters.weekday = filters.date.weekday()
         filters.week_type = filters.date.isocalendar()[1] % 2

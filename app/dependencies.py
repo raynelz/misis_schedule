@@ -23,6 +23,8 @@ class ScheduleFilters:
         self.teacher_fio = teacher_fio
         self.room_id = room_id
         self.date = date
+        self.weekday: int | None = None
+        self.week_type: int = 0
 
     def __call__(self):
         return self.group_name or self.teacher_fio or self.room_id
