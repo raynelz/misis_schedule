@@ -1,15 +1,38 @@
-version: '3.9'
-
 services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    env_file:
+      - .env
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--providers.docker.exposedbydefault=false"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - traefik
+
   db:
     image: postgres:15
     restart: always
     env_file:
       - .env
-    ports:
-      - 5432:5432
-    # volumes:
-    #   - pgdata:/var/lib/postgresql/data
+    networks:
+      - traefik
 
   server:
     build:
@@ -18,10 +41,25 @@ services:
     restart: always
     env_file:
       - .env
-    ports:
-      - 8000:8000
+    environment:
+      - POSTGRES_HOST=db
+    labels:
+      - "traefik.enable=true"
+      
+      - "traefik.http.routers.server-http.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.server-http.entrypoints=web"
+      - "traefik.http.routers.server-http.middlewares=redirect-to-https"
+      - "traefik.http.routers.server.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.server.entrypoints=websecure"
+      - "traefik.http.routers.server.tls.certresolver=myresolver"
+      - "traefik.http.services.server.loadbalancer.server.port=8000"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
     depends_on:
       - db
-  
-# volumes:
-#   pgdata:
+    networks:
+      - traefik
+
+networks:
+  traefik:
+    external: true

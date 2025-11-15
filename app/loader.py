@@ -5,8 +5,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.data import models
 from app.data.db import engine
-from app.routers import router
+from app.routers import router, root_router
 from app.utils.upload import upload_schedules
+from app.configs.settings import settings
 
 scheduler = BackgroundScheduler(timezone="Europe/Moscow")
 
@@ -24,8 +25,14 @@ async def on_startup():
 
 
 def create_app():
-    app = FastAPI()
+    app = FastAPI(
+        root_path=settings.ROOT_PATH if settings.ROOT_PATH else "",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+    )
     app.add_event_handler("startup", on_startup)
 
+    app.include_router(root_router)
     app.include_router(router)
     return app

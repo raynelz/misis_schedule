@@ -10,3 +10,4 @@ openpyxl
 beautifulsoup4
 httpx
 apscheduler
+pydantic-settings

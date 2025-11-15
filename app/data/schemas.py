@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class LessonInput(BaseModel):
@@ -12,8 +12,8 @@ class LessonInput(BaseModel):
     teacher_fio: Optional[str]
     room_id: str
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "title": "Математика",
                 "weekday": 0,
@@ -25,10 +25,10 @@ class LessonInput(BaseModel):
                 "room_id": "Б-3",
             }
         }
+    )
 
 
 class LessonDto(LessonInput):
     id: int
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

@@ -9,7 +9,21 @@ from app.configs.settings import settings
 
 
 def data_preprocess(df: pd.DataFrame, group, odd_even: str) -> pd.DataFrame:
-    cur = df.loc[:, [group, "order", "weekday", f"{group}-кабинеты"]]
+    # Safely extract group column (handle accidental duplicate column names)
+    group_col = df[group]
+    if isinstance(group_col, pd.DataFrame):
+        group_col = group_col.iloc[:, 0]  # take first if duplicates
+
+    room_col = df[f"{group}-кабинеты"]
+    if isinstance(room_col, pd.DataFrame):
+        room_col = room_col.iloc[:, 0]
+
+    cur = pd.DataFrame({
+        group: group_col,
+        "order": df["order"],
+        "weekday": df["weekday"],
+        f"{group}-кабинеты": room_col,
+    })
     cur.dropna(inplace=True)
     cur.rename(
         columns={
@@ -57,36 +71,45 @@ def upload_schedules():
 
             df = pd.read_excel(data, sheet_name=sheet_name)
 
-            weekdays = df.iloc[:, 0].fillna(method="ffill")
+            weekdays = df.iloc[:, 0].ffill()
             df["Дата"] = weekdays
-            lesson_orders = df.iloc[:, 1].fillna(method="ffill")
+            lesson_orders = df.iloc[:, 1].ffill()
             df["Номер"] = lesson_orders
             df["Номер"] = df["Номер"].astype(int, errors="ignore")
 
-            columns = list(
-                pd.DataFrame(df.columns)
-                .replace(r"^Unnamed.*", np.nan, regex=True)
-                .ffill(limit=1)[0]
-            )
-            df.columns = columns
+            # --- NEW COLUMN NORMALIZATION FOR NEW XLSX FORMAT ---
+            raw_cols = list(df.columns)
 
-            groups = set(columns)
-            try:
-                groups.remove("Номер")
-                groups.remove("Дата")
-                groups.remove("Время")
-                groups.remove(np.nan)
-            except KeyError:
-                pass
+            # First 3 columns: Дата, Номер, Время
+            fixed_cols = raw_cols[:3]
 
-            df.columns = [
-                f"{col}-кабинеты" if is_duplicated else col
-                for col, is_duplicated in zip(
-                    df.columns, df.columns.duplicated(keep="first")
-                )
-            ]
-            df = df.loc[:, ~df.columns.str.startswith("nan", na=False)]
-            df.drop(columns=["Время", np.nan], inplace=True, errors="ignore")
+            other = raw_cols[3:]
+            groups = []
+
+            # Ensure even number of columns (drop trailing garbage column if exists)
+            if len(other) % 2 != 0:
+                other = other[:-1]
+
+            i = 0
+            while i < len(other):
+                group_col = other[i]
+
+                # Resolve Unnamed columns by inheriting the previous real group name
+                if "Unnamed" in str(group_col):
+                    j = i - 1
+                    while j >= 0 and "Unnamed" in str(other[j]):
+                        j -= 1
+                    group_col = other[j]
+
+                groups.append(group_col)
+
+                room_col = f"{group_col}-кабинеты"
+                fixed_cols.append(group_col)
+                fixed_cols.append(room_col)
+
+                i += 2
+
+            df.columns = fixed_cols
 
             df = df.rename(
                 columns={
@@ -112,77 +135,3 @@ def upload_schedules():
             for group in groups:
                 data_preprocess(odd, group, "odd")
                 data_preprocess(even, group, "even")
-
-
-# def upload_schedules_ibo(file):
-#     data = pd.ExcelFile(file.file)
-
-#     magistracy = [
-#         sheet_name for sheet_name in data.sheet_names if "магистры" in sheet_name
-#     ]
-#     bachelors = [
-#         sheet_name for sheet_name in data.sheet_names if "магистры" not in sheet_name
-#     ]
-
-#     for sheet_name in bachelors:
-#         df = pd.read_excel(data, sheet_name=sheet_name)
-
-#         df = df.iloc[:, 2:]
-
-#         groups = set(df.iloc[0])
-#         groups.remove(np.nan)
-
-#         df.columns = df.iloc[0].fillna(method="ffill")
-#         df.columns = [
-#             f"{col}-кабинеты" if is_duplicated else col
-#             for col, is_duplicated in zip(
-#                 df.columns, df.columns.duplicated(keep="first")
-#             )
-#         ]
-#         df = df.iloc[2:, :]
-
-#         weekdays = [i // 10 for i in range(60)]
-#         orders = []
-#         for i in range(5):
-#             orders += [i + 1, i + 1]
-#         orders = orders * 6
-
-#         df["weekday"] = weekdays
-#         df["order"] = orders
-
-#         for group in groups:
-#             cur = df.loc[:, [group, "order", "weekday", f"{group}-кабинеты"]]
-#             cur = cur[cur[group].notna()]
-#             cur[f"{group}-кабинеты"] = cur[f"{group}-кабинеты"].fillna(
-#                 method="backfill"
-#             )
-#             cur[f"{group}-кабинеты"] = cur[f"{group}-кабинеты"].fillna(method="ffill")
-#             cur[group] = cur[group].astype(str)
-#             cur[f"{group}-кабинеты"] = cur[f"{group}-кабинеты"].astype(str)
-
-#             # duplicates = cur[cur["order"].duplicated(keep="first")]
-
-#             # for order in duplicates["order"].unique():
-#             #     if len(duplicates[duplicates["order"] == order]) > 1:
-#             #         # check if group-кабинеты are also duplicated
-#             #         if (
-#             #             len(
-#             #                 duplicates[duplicates["order"] == order][
-#             #                     f"{group}-кабинеты"
-#             #                 ].unique()
-#             #             )
-#             #             > 1
-#             #         ):
-#             #             # if so, then make their group value equal to the concatenation of group values of these two duplicates
-#             #             cur.loc[cur["order"] == order, group] = cur.loc[
-#             #                 cur["order"] == order, group
-#             #             ].str.cat(sep=", ")
-#             #         # cur.loc[cur["order"] == order, group] = cur.loc[
-#             #         #     cur["order"] == order, group
-#             #         # ].str.cat(sep=", ")
-
-#             cur.to_csv(f"./test/{group}.csv", index=False)
-
-#             # if group == "БЛГ-22-1":
-#             # log.debug(cur)
-#         # log.debug(df.head())
