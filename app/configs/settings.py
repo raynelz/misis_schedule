@@ -51,6 +51,8 @@ class Settings(BaseSettings):
         case_sensitive=True,
         # Переменные окружения имеют приоритет над .env файлом
         env_file_encoding="utf-8",
+        # Игнорировать неизвестные переменные (например, DOMAIN, ACME_EMAIL для docker-compose)
+        extra="ignore",
     )
 
 
