@@ -92,19 +92,27 @@ def upload_schedules():
                 for idx, col in enumerate(df.columns[:5]):  # Проверяем первые 5 колонок
                     if pd.isna(col):
                         continue
-                    sample_values = df[col].dropna().head(10).astype(str).tolist()
-                    if any(day in ' '.join(sample_values) for day in weekdays_list):
-                        weekday_col_idx = idx
-                        log.debug(f"Found weekday column at index {idx}: {col}")
-                        break
+                    try:
+                        # Используем iloc для гарантированного получения Series
+                        col_series = df.iloc[:, idx]
+                        sample_values = col_series.dropna().head(10).astype(str).tolist()
+                        if any(day in ' '.join(sample_values) for day in weekdays_list):
+                            weekday_col_idx = idx
+                            log.debug(f"Found weekday column at index {idx}: {col}")
+                            break
+                    except Exception as e:
+                        log.debug(f"Error checking column {idx} ({col}): {e}")
+                        continue
                 
                 # Ищем колонку с номерами пар (должна содержать числа 1-5)
                 for idx, col in enumerate(df.columns[:5]):
                     if pd.isna(col) or idx == weekday_col_idx:
                         continue
                     try:
+                        # Используем iloc для гарантированного получения Series
+                        col_series = df.iloc[:, idx]
                         # Пробуем преобразовать в числа
-                        numeric_values = pd.to_numeric(df[col].dropna().head(20), errors='coerce')
+                        numeric_values = pd.to_numeric(col_series.dropna().head(20), errors='coerce')
                         valid_numbers = numeric_values.dropna()
                         if len(valid_numbers) > 0:
                             # Проверяем, что числа в диапазоне 1-10 (номера пар)
@@ -112,18 +120,25 @@ def upload_schedules():
                                 order_col_idx = idx
                                 log.debug(f"Found order column at index {idx}: {col}")
                                 break
-                    except:
-                        pass
+                    except Exception as e:
+                        log.debug(f"Error checking column {idx} ({col}): {e}")
+                        continue
                 
                 # Ищем колонку со временем (формат "09:00:00 - 10:35:00" или подобный)
                 for idx, col in enumerate(df.columns[:5]):
                     if pd.isna(col) or idx in [weekday_col_idx, order_col_idx]:
                         continue
-                    sample_values = df[col].dropna().head(10).astype(str).tolist()
-                    if any(':' in str(val) and '-' in str(val) for val in sample_values):
-                        time_col_idx = idx
-                        log.debug(f"Found time column at index {idx}: {col}")
-                        break
+                    try:
+                        # Используем iloc для гарантированного получения Series
+                        col_series = df.iloc[:, idx]
+                        sample_values = col_series.dropna().head(10).astype(str).tolist()
+                        if any(':' in str(val) and '-' in str(val) for val in sample_values):
+                            time_col_idx = idx
+                            log.debug(f"Found time column at index {idx}: {col}")
+                            break
+                    except Exception as e:
+                        log.debug(f"Error checking column {idx} ({col}): {e}")
+                        continue
 
                 # Если не нашли автоматически, используем старую логику (первые две колонки)
                 if weekday_col_idx is None:
