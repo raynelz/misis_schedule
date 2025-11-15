@@ -23,6 +23,8 @@ def data_preprocess(df: pd.DataFrame, group, odd_even: str) -> pd.DataFrame:
         inplace=True,
     )
 
+    # Преобразуем title в строку перед использованием .str accessor
+    cur["title"] = cur["title"].astype(str)
     cur["teacher_fio"] = cur["title"].str.split("\n").str[1]
     cur["type"] = cur["title"].str.extract(r"\(([^)]*)\)[^(]*$")
     cur["title"] = cur["title"].str.split("\n").str[0]
